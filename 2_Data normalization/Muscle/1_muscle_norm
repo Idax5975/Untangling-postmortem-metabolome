@@ -1,1 +1,466 @@
 
+---
+title: "PMI rat muscle - Normalization and PCA based on 200 stable features"
+author: "IMML"
+date: " updated : `r Sys.time()`"
+output: 
+  html_document:
+    code_folding: hide
+    theme: cosmo
+    toc: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r, message=F, warning=F}
+
+# Initialization
+
+## Turning off warnings and messages in output
+
+knitr::opts_chunk$set(message=F)
+knitr::opts_chunk$set(warning=F)
+
+## Loading required packages
+library(tidyverse)
+library(cowplot)
+library(ggsci)
+library(Hmisc)
+library(dplyr)
+library(xlsx)
+library(ggfortify)
+
+## Configuration of output format etc.
+
+options(digits = 5)        # number of digits printed by R default (vectors, data.frames, lists)
+options(pillar.sigfig = 5) # number of digits printed by tibbles default.
+
+text_base_size   <- 8   # in pt
+fig.witdh        <- 200  # in mm
+fig.height       <- 150  # in mm
+
+# Set all text in plots to same size
+theme_set(theme_cowplot(font_size = text_base_size, rel_small = 1, rel_tiny = 1, rel_large = 1))
+
+# Setting output sizes for plots
+knitr::opts_chunk$set(fig.width = fig.witdh/25.4)
+knitr::opts_chunk$set(fig.height = fig.height/25.4)
+knitr::opts_chunk$set(dpi = 108) # You need to find your minotors dpi yourself.
+
+# Setting text size inside plots (geom_text, geom_label etc.)
+ggplot_text_size <- text_base_size / ggplot2::.pt
+# Now use: geom_text(..., size = ggplot_text_size)
+
+# For saving plots!
+# Use: ggsave(plot1, filename="myplot.png", width = fig.witdh, height=fig.height, units = "mm")
+# Use: ggsave(plot1, filename="myplot.pdf", width = fig.witdh, height=fig.height, units = "mm")
+
+# Changing default ggplot colours
+# see ?scale_fill_continuous
+options(ggplot2.continuous.fill  = scale_fill_viridis_c)    
+options(ggplot2.discrete.fill    = list(ggsci::pal_locuszoom()(7)) )
+options(ggplot2.continuous.colour = scale_colour_viridis_c)
+options(ggplot2.discrete.colour   = list(ggsci::pal_locuszoom()(7)))
+
+## Set locale if you want Danish/English month names etc.
+
+#x <- Sys.setlocale(locale = "Danish_Denmark")  # For Danish axes on plot
+x <- Sys.setlocale(locale = "English_Denmark")  # For English axes on plot
+rm(x)
+
+source("...\Functions_R\\pca_function.R")
+
+source("...\Functions_R\\PCA_replicate_function_PMI_IMML.R")
+
+source("...\Functions_R\\PCA_replicate_function_IMML.R")
+
+source("...\Functions_R\\PCA_replicate_function_raw_PMI_IMML.R")
+
+```
+
+# Load Data  
+  
+```{r load data}
+
+setwd("...")
+
+#Loading and formatting:
+Raw_data <- readxl::read_xlsx(path = "./PMI_rat_muscle_raw_winfo_filtered_blank_pos.xlsx")
+
+Raw_data <- t(Raw_data)
+
+colnames(Raw_data) <- Raw_data[1,]
+
+Raw_data <- Raw_data[-c(1, 56, 57, 58, 59),]%>%
+  as.data.frame()
+
+
+Raw_data <- tibble::rownames_to_column(Raw_data, "Info")
+CAMERA_info <- Raw_data[1:13,]
+
+
+Prep_data <- Raw_data[14:nrow(Raw_data),]
+
+#making a more useful dataframe
+ms <- list()
+
+ms$rowinfo <- Prep_data%>%
+  select(Info, Sample_ID, Unique_ID, Tissue_ID, Rat_ID, Batch, Type, PMI_group, Death_manner, Room_Temperature, Sampling_order, Time_since_death_h)%>%
+  rowid_to_column()
+
+ms$values <- Prep_data %>%
+  select(-Info, -Sample_ID, -Unique_ID, -Tissue_ID, -Rat_ID, -Batch, -Type, -PMI_group, -Death_manner, -Room_Temperature, -Sampling_order, -Time_since_death_h)%>%
+  as.matrix()
+
+
+storage.mode(ms$values) <- "numeric"
+ms$values <- replace(ms$values, is.na(ms$values), 0)
+
+
+ms$rowinfo$Time_since_death_h <- round(as.numeric(ms$rowinfo$Time_since_death_h), digits = 0)
+```
+
+# PCA of raw data
+```{r PCA plots raw}
+
+plot_pca(ms$values, ms$rowinfo, color_label = "PMI_group", panels = 1)
+
+
+
+
+
+
+tmp1 <- ms$rowinfo %>% mutate(color_variable=Time_since_death_h)
+tmp2 <- ms$values
+
+plot_pmi_raw_pca_replicates(tmp1,tmp2, title = "All muscle samples, all raw features", show_legend_title = "Time since death (h)")
+
+rm(tmp1, tmp2)
+```
+
+
+
+# Use correlations to select stable features
+```{r}
+
+tmp1 <- cbind(data.frame(ms$rowinfo), data.frame(ms$values))
+
+tmp1%>%
+  count(Sample_ID)
+
+technical_replicates <- tmp1 %>% 
+  count(Sample_ID, Type) %>% 
+  filter(Type %in% c("Replicate", "QC"))
+
+technical_replicates
+
+tmp2 <- tmp1 %>% 
+  mutate(Type2 = ifelse(Sample_ID %in% technical_replicates$Sample_ID, 
+                        "Replicate", 
+                        "Not replicate")) %>%
+  mutate(group_id = ifelse(Type2=="Replicate", Sample_ID, Unique_ID))
+
+compound_names <- tmp1[,14:ncol(tmp1)] %>% names()
+
+ms <- list()
+ms$rowinfo0  <- tmp2 %>% select(!all_of(compound_names)) %>% mutate(i = row_number())
+ms$values0_0 <- tmp2 %>% select(all_of(compound_names))
+
+rm(technical_replicates,compound_names)
+rm(tmp1, tmp2)
+
+```
+
+```{r PCA of transformed data}
+tmp1 <- ms$rowinfo0 %>% filter(Type2=="Replicate") %>% mutate(color_variable = Batch)
+tmp2 <- ms$values0_0[tmp1$i,]
+plot_pca_replicates(tmp1,tmp2, title = "Technical replicates only")
+
+tmp1 <- ms$rowinfo0 %>% mutate(color_variable=PMI_group, group_variable=group_id)
+tmp2 <- ms$values0_0[tmp1$i,]
+plot_pca_replicates(tmp1,tmp2, title = "All muscle samples")
+
+rm(tmp1,tmp2)
+
+```
+
+
+# Use tech replicates to remove noisy compounds
+
+First we get a long list of the interesting pairs of samples.
+
+We are only interested in pairs of technical replicates.
+
+And only unique pairs (so tr1, tr2 and not also tr2,tr1)
+
+```{r}
+
+tmp1 <- ms$rowinfo0 %>% 
+  filter(Type2=="Replicate")
+
+tmp2 <- ms$values0_0[tmp1$i, ] %>% 
+  as.matrix() # This will speed things up - a lot!
+
+x <- tmp1 %>% 
+  mutate(i = row_number()) %>%
+  mutate(temp=1)
+  
+sample_pairs <- full_join(x,x, by="temp", relationship="many-to-many") %>%
+  filter(Sample_ID.x == Sample_ID.y) %>%
+  filter(i.x < i.y) %>%
+  select(i.x, i.y, everything()) %>%
+  select(-temp)
+
+sample_pairs %>% count(Sample_ID.x, Sample_ID.y)
+
+
+```
+
+## Look at correlation for each single compound
+
+Then for each compound we get the pairs and calculate the correlation across all pairs.
+
+```{r}
+
+result <- tibble(name = colnames(tmp2), column = 1:length(colnames(tmp2)))
+
+g1 <- sample_pairs$i.x
+g2 <- sample_pairs$i.y
+
+r_pearson <- rep(NA, nrow(result))
+
+for (i in 1:nrow(result)) {
+  values <- tmp2[,result$column[i]]
+  v1 <- values[g1]
+  v2 <- values[g2]
+  r_pearson[i] <- cor(v1,v2, method = "pearson")
+  if (i %% 1000==0) { cat(".");if (i %% 10000==0) { cat("\n") }}
+}
+
+rm(i,v1,v2,values)
+
+result$r_pearson <- r_pearson
+
+ggplot(result, aes(x=r_pearson)) + 
+  geom_histogram(bins=100, boundary=0.95) +
+  geom_vline(xintercept = 0.95, linetype="dashed") +
+  xlab("Pearson correlation") +
+  ggtitle("Correlation of features in muscle samples")
+
+good_single_compounds <- result %>%
+  select(-column) %>%
+  filter(r_pearson > 0.95) %>% 
+  arrange(desc(r_pearson))
+
+good_single_compounds
+
+
+#Only select the top 200 features
+good_single_compounds <- good_single_compounds[1:200,]
+
+
+ms$good_single_compounds <- ms$values0_0%>%
+  select(any_of(good_single_compounds$name))
+
+rm(result)
+
+```
+
+
+
+
+## PCA of selected and transformed compounds
+
+```{r}
+
+tmp1 <- ms$rowinfo0 %>% filter(Type2=="Replicate") %>% mutate(color_variable=PMI_group)
+tmp2 <- ms$good_single_compounds[tmp1$i,]
+
+plot_pca_replicates(tmp1,tmp2, title = "Replicates only, selected compounds")
+
+tmp1 <- ms$rowinfo0 %>% mutate(color_variable=Time_since_death_h, group_variable=group_id)
+tmp2 <- ms$good_single_compounds
+
+plot_pca_replicates(tmp1,tmp2, title = "All muscle samples, stable features")
+
+#Special PCA:
+plot_pmi_pca_replicates(tmp1, tmp2, title = "All muscle samples, stable features", show_legend_title = "Time since death (h)")
+
+
+#Prepare for loadings plot
+r <- prcomp(x=ms$good_single_compounds)
+
+PCAloadings <- r$rotation
+
+plot(PCAloadings[,1:2], #x and y data
+     pch=21,            # point shape
+     bg="black",        # point color
+     cex=0.9,             # point size
+     main="Loadings  - PMI rat muscle, Stable features, positive ionization")   # Title of plot
+text(PCAloadings[,1:2], # Set label position
+     labels=rownames(PCAloadings), cex = 0.7) #print labels
+
+
+rm(tmp1,tmp2)
+
+```
+
+
+
+
+
+# Normalization
+
+```{r Normalization}
+
+#Normalization:
+#1. step normalization is removal of constant features with variation=0:
+constant_columns <-
+  ms$good_single_compounds %>%
+  as_tibble() %>%
+  map_lgl(~var(.x)==0) #finds if variance=0 by searching each column
+
+#We will remove:
+constant_columns[constant_columns]
+# No constant columns
+
+#ms$values <- ms$values[,!constant_columns]
+
+#2. step - Normalization by taking the peaks in the middle 50% and use the sum to normalize. 
+
+target_values <- ms$good_single_compounds %>% as.data.frame()
+
+target_values2 <- target_values
+
+target_values3 <- as.matrix(target_values)
+target_values3 <- unname(target_values3)
+
+median_peak <- median(target_values3)
+
+for(i in 1:nrow(target_values3)) {
+ x <- target_values3[i,]
+ j <- x > quantile(x, 0.25) & x < quantile(x,0.75)
+ mysum <- sum(x[j])
+ target_values2[i,] <- median_peak  * x /mysum
+
+}
+
+
+ms$good_single_compounds <- target_values2
+
+
+#3. transform data:
+#histogram before transformation:
+#pd <- as.data.frame(ms$good_single_compounds) %>% 
+#  pivot_longer(cols = everything(), values_to = "raw") %>%
+#  mutate(log1p = log1p(raw)) %>%
+#  mutate(`4th root` = raw^(1/4)) %>%
+#  select(-name) %>%
+#  pivot_longer(cols = everything()) %>%
+#  mutate(name = fct_inorder(name))
+
+#ggplot(pd, aes(x=value, fill=name)) + 
+#  geom_histogram() +
+#  facet_wrap(~name, scales = "free", ncol=1) +
+#  ggtitle("Effect of transformation") +
+#  theme(legend.position = "none", axis.title = element_blank())
+
+
+#Transform values
+#ms$good_single_compounds <- log1p(ms$good_single_compounds)
+
+
+#cleaning
+#rm(pd, r, target_values, target_values2, target_values3, constant_columns, i, j, median_peak, mysum, x)
+
+
+
+#4. Batch normalization:
+#new feature value = (feature value - mean feature value in batch)/std. of feature in batch
+
+Batch1_features <- ms$rowinfo0%>%
+  cbind(ms$good_single_compounds)%>%
+  filter(Batch == "1" | Batch == "2")
+
+Batch1_metadata <- Batch1_features[,1:16]
+Batch1_features <- Batch1_features[,17:ncol(Batch1_features)]
+  
+Batch1_norm_features <- Batch1_features%>%
+  as.data.frame()
+
+  
+for (col in 1:ncol(Batch1_features)){
+  for (row in 1:nrow(Batch1_features)){
+    Batch1_norm_features[row, col] <- (Batch1_features[row, col] - mean(Batch1_features[, col]))/sd(Batch1_features[, col])
+  }  
+}  
+  
+  
+Batchnorm <- Batch1_metadata%>%
+  cbind(Batch1_norm_features)
+
+
+ms$rowinfo0 <- Batchnorm[,1:16]
+ms$good_single_compounds <- Batchnorm[,17:ncol(Batchnorm)]
+
+rm(Batch1_features, Batch1_metadata, Batch1_norm_features, Batchnorm, col, row)
+
+
+
+#plot histogram
+pd <- as.data.frame(ms$good_single_compounds) %>% 
+  pivot_longer(cols = everything(), values_to = "norm, transform, batchnorm") %>%
+  select(-name) %>%
+  pivot_longer(cols = everything()) %>%
+  mutate(name = fct_inorder(name))
+
+ggplot(pd, aes(x=value, fill=name)) + 
+  geom_histogram() +
+  facet_wrap(~name, scales = "free", ncol=1) +
+  ggtitle("Effect of transformation") +
+  theme(legend.position = "none", axis.title = element_blank())
+
+
+
+```
+
+# PCA plots
+```{r PCA plots}
+
+plot_pca(ms$good_single_compounds, ms$rowinfo0, color_label = "PMI_group", panels = 1)
+
+
+
+tmp1 <- ms$rowinfo0 %>% mutate(color_variable=PMI_group)
+tmp2 <- ms$good_single_compounds
+
+plot_pmi_pca_replicates(tmp1,tmp2, title = "All muscle samples, normalized stable features", show_legend_title = "PMI Group")
+
+rm(tmp1, tmp2)
+```
+
+
+# Save normalized selected data
+```{r save data}
+
+data <- ms$rowinfo0%>%
+  cbind(ms$good_single_compounds)
+
+features <- colnames(ms$good_single_compounds)
+
+C_info <- CAMERA_info[, which((names(CAMERA_info) %in% features)== TRUE)]
+C_info <- cbind(CAMERA_info[,1:12], C_info)
+
+data <- plyr::rbind.fill(data, C_info)
+
+setwd("...")
+write.xlsx(data, "./2_Data normalization/Muscle/PMI_rat_muscle_stable_features_normalized_batchnorm_pos.xlsx")
+
+
+
+```
+
+
+
+
