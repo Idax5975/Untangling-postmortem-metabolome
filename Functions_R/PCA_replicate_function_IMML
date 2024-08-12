@@ -1,1 +1,73 @@
 
+
+plot_pca_replicates <- function(tmp1,tmp2, title="", show_legend=T, ranks=8, return_plot=F, show_legend_title="", group_variable=NA) {
+  require(ggplot2)
+  # Requires a color_variable and a group variable
+  # tmp1 is the description of the values
+  # tmp2 is the data frame of values
+  if(!"group_variable" %in% names(tmp1)) {
+    tmp1 <- tmp1 %>% mutate(group_variable=Sample_ID)
+  }
+  
+  i <- which(apply(tmp2,2,sd) > 0)  # Remove all constant columns
+  r  <- prcomp(x = tmp2[,i], retx = TRUE, center = T, scale = T, rank. = ranks)
+  title <- paste(title, "\n", nrow(tmp1), " samples, ", ncol(tmp2), " features", sep="")
+  pd <- r$x %>% 
+    as_tibble() %>%
+    bind_cols(tmp1) %>%
+    {.}
+  
+  var_explained <- r$sdev^2/sum(r$sdev^2)
+  var_explained <- round(var_explained * 100, 2)
+  var_explained <- var_explained
+  
+  plotlist <- list()
+  # Scree plot
+  pd2 <- tibble(x = 1:ranks, y=var_explained[1:ranks])
+  
+  p1 <- ggplot(pd2,aes(x=factor(x),y=y)) +
+    geom_col() +
+    xlab("PC axis") + ylab("% variance explained") +
+    theme(legend.position="none") +
+    ggtitle(title)
+  
+  plotlist[[length(plotlist)+1]] <- p1 
+  
+  for(i in 1:(ncol(r$x)/2)) {
+    xvar <- names(pd)[2*i-1]
+    yvar <- names(pd)[2*i]
+    xlabel <- paste(xvar, "\n", var_explained[2*i-1], "%",sep="")
+    ylabel <- paste(yvar, "\n", var_explained[2*i], "%",sep="")
+
+    pd <- pd %>% 
+      group_by(group_variable) %>%
+      mutate(PC11 = mean(!!ensym(xvar)),
+             PC21 = mean(!!ensym(yvar)))
+
+    p1 <- ggplot(pd,aes(x=!!ensym(xvar), y=!!ensym(yvar), color=color_variable, group=group_variable)) +
+      geom_segment(aes(xend=PC11, yend=PC21), alpha=0.5) +
+      geom_point(alpha=0.5) +
+      xlab(xlabel) + ylab(ylabel) +
+      theme(legend.position="none")
+    
+    #if (i==1) { p1 <- p1 + ggtitle(title) }
+    
+    plotlist[[length(plotlist)+1]] <- p1
+  }
+  if (show_legend) {
+    if (show_legend_title=="") {
+      p2 <- get_legend(p1 + theme(legend.position="right", legend.title = element_blank()))
+    } else {
+      p2 <- get_legend(p1 + labs(color=show_legend_title) + theme(legend.position="right"))
+    }
+  
+  plotlist[[length(plotlist)+1]] <- p2
+  }
+  aligned_plots <- cowplot::align_plots(plotlist = plotlist, align = "hv", axis="tblr")
+  final <- cowplot::plot_grid(plotlist = aligned_plots)
+  if(return_plot) { 
+    return(final)
+  }
+  plot(final)
+  knitr::asis_output(x = '\n<p>[Go to Top](#)\n')
+}
