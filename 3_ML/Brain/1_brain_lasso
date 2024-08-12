@@ -1,1 +1,180 @@
+---
+title: "ML - PMI rat brain - stable features - pos"
+author: "IMML"
+date: " updated : `r Sys.time()`"
+output: 
+  html_document:
+    code_folding: hide
+    theme: cosmo
+    toc: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+# Init
+
+```{r, message=F, warning=F}
+
+library(tidyverse)
+library(cowplot)
+library(ggsci)
+library(lightgbm)
+library(xlsx)
+
+knitr::opts_chunk$set(message=F)
+knitr::opts_chunk$set(warning=F)
+
+options(digits = 5)
+options(pillar.sigfig = 5)
+
+text_base_size   <- 12
+fig.witdh        <- 180
+fig.height       <- 120
+
+theme_set(theme_cowplot(font_size = text_base_size, rel_small = 1, rel_tiny = 1, rel_large = 1))
+
+knitr::opts_chunk$set(fig.width = fig.witdh/25.4)
+knitr::opts_chunk$set(fig.height = fig.height/25.4)
+knitr::opts_chunk$set(dpi = 108) # You need to find your minotors dpi yourself.
+
+ggplot_text_size <- text_base_size / ggplot2::.pt
+
+options(ggplot2.continuous.fill  = scale_fill_viridis_c)    
+options(ggplot2.discrete.fill    = list(ggsci::pal_locuszoom()(7)) )
+options(ggplot2.continuous.colour = scale_colour_viridis_c)
+options(ggplot2.discrete.colour   = list(ggsci::pal_locuszoom()(7)))
+
+x <- Sys.setlocale(locale = "English_Denmark")  # For English axes on plot
+rm(x)
+
+```
+
+# Reading data
+
+```{r load data}
+
+setwd("...\3_ML")
+
+raw_data <- readxl::read_xlsx(path = "../2_Data normalization/Brain/PMI_rat_brain_stable_features_normalized_batchnorm_pos.xlsx", sheet = 1)
+
+raw_data <- raw_data[,-1]
+
+CAMERA_info <- raw_data[80:nrow(raw_data),]
+
+raw_data <- raw_data[-c(80:nrow(raw_data)),]
+
+raw_data <- raw_data %>% 
+  mutate(pmi = Time_since_death_h %>% as.numeric()) %>%
+  select(pmi, everything()) %>%
+  drop_na(pmi) %>% # Removes QC samples
+  sample_frac(size = 1) %>%
+  {.}
+
+feature_names <- raw_data %>% select(starts_with("M")) %>% names()
+
+```
+
+
+# Nested leave two rats out
+
+```{r}
+
+r <- list()
+
+lambda.grid <- expand.grid(alpha=1, lambda=10^seq(-5,0, length=50))
+
+rats <- unique(raw_data$Sample_ID)
+
+set.seed(0)
+i = 1
+
+for (i in 1:length(rats)) {
+  rat1_id <- rats[i]
+  inner_data <- raw_data %>% filter(Sample_ID != rat1_id)
+  cat(date(), " Leaving rat ", i, "/", length(rats), " (",rat1_id,") out\n", sep="",
+      file = "log.txt", append = T)
+  for (rat2_id in unique(inner_data$Sample_ID)) {
+    # Training data
+    x <- inner_data %>% filter(Sample_ID != rat2_id) 
+    x_train <- x %>% select(all_of(feature_names)) %>% as.matrix()
+    y_train <- x %>% pull(pmi)
+    folds <- caret::groupKFold(x$Sample_ID, k = length(unique(x$Sample_ID)))
+    train_control <- caret::trainControl(method="cv", index=folds, verboseIter = F)
+    #
+    # Select important features using everything except 2 rats
+    #
+    
+    lasso.model.full <- caret::train(x = x_train, y = y_train, 
+                         method = "glmnet",
+                         tuneGrid = lambda.grid, 
+                         trControl = train_control)
+    #
+    # select top 15 features from CV model
+    #
+    Brain_important_features <- varImp(lasso.model.full)$importance %>% 
+      tibble::rownames_to_column() %>%
+      filter(Overall > 0) %>%
+      slice_max(Overall, n=15) %>%
+      pull(rowname)
+    
+    #
+    # Limit training data to selected features
+    #
+    x <- inner_data %>% filter(Sample_ID != rat2_id) 
+    x_train <- x %>% select(all_of(Brain_important_features)) %>% as.matrix()
+    y_train <- x %>% pull(pmi)
+    folds <- caret::groupKFold(x$Sample_ID, k = length(unique(x$Sample_ID)))
+    train_control <- caret::trainControl(method="cv", index=folds, verboseIter = F)
+    # Test data
+    x <- raw_data %>% filter(Sample_ID == rat2_id)
+    x_test <- x %>% select(all_of(Brain_important_features)) 
+    y_test <- x %>% select(!all_of(feature_names))
+    #
+    # Lasso training of everything except the two rats
+    #
+    print(paste(Sys.time(), "Fitting lasso"))
+    model <- caret::train(x = x_train, y = y_train, 
+                          method = "glmnet", 
+                          tuneGrid = lambda.grid,
+                          trControl = caret::trainControl(method = "boot"))
+
+    r[[length(r)+1]] <- y_test %>% 
+      mutate(predicted = predict(model, newdata = x_test %>% as.matrix()),
+             rat1 = rat1_id, rat2=rat2_id, 
+             method="Lasso")
+    
+    
+  }
+}
+
+
+```
+
+## Saving
+
+```{r}
+
+setwd("...\3_ML")
+
+
+pd <- bind_rows(r)
+write_tsv(x = pd, file="./Brain/results_brain_imp_batchnorm_features_nested_leave_rat_out.tsv")
+
+
+data <- raw_data %>% select(all_of(Brain_important_features)) %>% as.matrix()
+
+data <- cbind(raw_data[,1:17], data)
+
+
+
+C_info <- CAMERA_info[, which((names(CAMERA_info) %in% Brain_important_features)== TRUE)]
+C_info <- cbind(CAMERA_info[,1:16], C_info)
+
+data <- plyr::rbind.fill(data, C_info)
+
+
+
+write.xlsx(data, "./Brain/PMI_rat_brain_lasso_batchnormalized_stable_features_pos.xlsx")
+
+```
 
