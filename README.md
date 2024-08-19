@@ -1,5 +1,5 @@
 # Untangling-postmortem-metabolome
-Scripts available for the qualifying exam and research article entitled: "Untangling the Postmortem Metabolome: A Machine Learning Approach for Accurate PMI Prediction"
+Scripts available for the research article entitled: "Untangling the Postmortem Metabolome: A Machine Learning Approach for Accurate PMI Prediction"
 
 This repository is divided into  main folders, sub-folders and sub-sub-folders. Each main folder is divided into sub-folders named by the tissue analysed within the scripts. Main folders and sub-sub-folders are numbered according to the order of the analysis. However, there is no folder 1 as the initial preprocessing was performed in Microsoft Excel. 
 
