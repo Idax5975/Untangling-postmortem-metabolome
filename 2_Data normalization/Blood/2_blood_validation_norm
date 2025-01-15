@@ -1,6 +1,6 @@
 ---
-title: "PMI rat blood validation - Normalization and PCA based on 200 stable features"
-author: "IMML"
+title: "PMI rat blood validation- Normalization and PCA based on 200 stable features"
+author: "Ida Marie Marquart Løber"
 date: " updated : `r Sys.time()`"
 output: 
   html_document:
@@ -10,8 +10,7 @@ output:
 editor_options: 
   chunk_output_type: console
 ---
-
-
+Data used in this script is sent through XCMS on the GenomeDK computer cluster together with the samples from the remaining three tissue types WITHOUT any grouping .
 ```{r, message=F, warning=F}
 
 # Initialization
@@ -68,38 +67,43 @@ options(ggplot2.discrete.colour   = list(ggsci::pal_locuszoom()(7)))
 x <- Sys.setlocale(locale = "English_Denmark")  # For English axes on plot
 rm(x)
 
-source("...\Functions_R\\pca_function.R")
+source("./Functions_R\\pca_function.R")
 
-source(...\Functions_R\\PCA_replicate_function_PMI_IMML.R")
+source("./PCA_replicate_function_PMI_IMML.R")
 
-source("...\Functions_R\\PCA_replicate_function_IMML.R")
+source("./PCA_replicate_function_IMML.R")
 
-source("...\Functions_R\\PCA_replicate_function_raw_PMI_IMML.R")
+source("./PCA_replicate_function_raw_PMI_IMML.R")
 
 ```
 
 # Load Data  
   
 ```{r load data}
-
-setwd("...")
+#remember to set working directory!
 
 #Loading and formatting:
-Raw_data <- readxl::read_xlsx(path = "./Blood/PMI_rat_blood_raw_validation_winfo_filtered_blank_pos.xlsx")
-
-Raw_data <- t(Raw_data)
-
-colnames(Raw_data) <- Raw_data[1,]
-
-Raw_data <- Raw_data[-c(1, 15, 16, 17),]%>%
-  as.data.frame()
+Raw_data <- readxl::read_xlsx(path = "./0_Data/Data/Blood/PMI_rat_blood_raw_validation_winfo_filtered_blank.xlsx")
 
 
-Raw_data <- tibble::rownames_to_column(Raw_data, "Info")
-CAMERA_info <- Raw_data[1:13,]
+pd_long <- Raw_data%>%
+  pivot_longer(cols = -name, values_to = "values", names_repair = "unique")
+
+pd <- pd_long%>%
+  pivot_wider(names_from = name...1, values_from = values)
+
+names(pd)[names(pd) == "name...2"] <- "Info"
 
 
-Prep_data <- Raw_data[14:nrow(Raw_data),]
+pd <- pd[-c(14, 15, 16),]%>%
+  as_tibble()
+
+
+CAMERA_info <- pd[1:13,]
+
+
+Prep_data <- pd[14:nrow(pd),]
+
 
 #making a more useful dataframe
 ms <- list()
@@ -115,6 +119,12 @@ ms$values <- Prep_data %>%
 
 storage.mode(ms$values) <- "numeric"
 ms$values <- replace(ms$values, is.na(ms$values), 0)
+
+
+ms$rowinfo$Time_since_death_h <- round(as.numeric(ms$rowinfo$Time_since_death_h), digits = 0)
+
+rm(pd_long)
+
 
 ```
 
@@ -138,13 +148,12 @@ rm(tmp1, tmp2)
 
 ```{r}
 
-#filter based on stable features in original blood dataset
-setwd("...")
+#filter based on stable features in original dataset
 
 #Loading and formatting:
-original_data <- readxl::read_xlsx(path = "./2_Data normalization/Blood/PMI_rat_blood_stable_features_normalized_batchnorm_pos.xlsx")
+original_data <- readRDS("./2_Data normalization/Blood/PMI_rat_blood_stable_features_normalized_batchnorm.rds")
 
-compound_names <- original_data[,18:ncol(original_data)] %>% names()
+compound_names <- original_data%>% select(starts_with("M")) %>% names()
 
 features <- Prep_data[, which((names(Prep_data) %in% compound_names)== TRUE)]
 
@@ -159,6 +168,7 @@ ms$values <- replace(ms$values, is.na(ms$values), 0)
 
 
 # Normalization
+If we will use ratios this will not be useful at all.
 
 ```{r Normalization}
 
@@ -199,37 +209,11 @@ for(i in 1:nrow(target_values3)) {
 ms$values <- target_values2
 
 
-#histogram before transformation:
-#pd <- as.data.frame(ms$values) %>% 
-#  pivot_longer(cols = everything(), values_to = "raw") %>%
-#  mutate(log1p = log1p(raw)) %>%
-#  mutate(`4th root` = raw^(1/4)) %>%
-#  select(-name) %>%
-#  pivot_longer(cols = everything()) %>%
-#  mutate(name = fct_inorder(name))
-
-#ggplot(pd, aes(x=value, fill=name)) + 
-#  geom_histogram() +
-#  facet_wrap(~name, scales = "free", ncol=1) +
-#  ggtitle("Effect of transformation") +
-#  theme(legend.position = "none", axis.title = element_blank())
-
-
-#Transform values
-#ms$values <- log1p(ms$values)
-
-
-#cleaning
-#rm(pd, target_values, target_values2, target_values3, constant_columns, i, j, median_peak, mysum, x)
-
-
-
 #Batch normalization:
 #new feature value = (feature value - mean feature value in batch)/std. of feature in batch
 
 Batch1_features <- ms$rowinfo%>%
-  cbind(ms$values)%>%
-  filter(Batch == "3")
+  cbind(ms$values)
 
 Batch1_metadata <- Batch1_features[,1:13]
 Batch1_features <- Batch1_features[,14:ncol(Batch1_features)]
@@ -254,17 +238,17 @@ ms$values <- Batchnorm[,14:ncol(Batchnorm)]
 
 
 
-#histogram before transformation:
-pd <- as.data.frame(ms$values) %>% 
+#histogram normalization and batch normalization:
+df <- as.data.frame(ms$values) %>% 
   pivot_longer(cols = everything(), values_to = "stable features, norm, transform, batchnorm") %>%
   select(-name) %>%
   pivot_longer(cols = everything()) %>%
   mutate(name = fct_inorder(name))
 
-ggplot(pd, aes(x=value, fill=name)) + 
+ggplot(df, aes(x=value, fill=name)) + 
   geom_histogram() +
   facet_wrap(~name, scales = "free", ncol=1) +
-  ggtitle("Effect of transformation") +
+  ggtitle("Effect of normalization and batch normalization") +
   theme(legend.position = "none", axis.title = element_blank())
 
 
@@ -303,15 +287,11 @@ C_info <- cbind(CAMERA_info[,1:12], C_info)
 
 data <- plyr::rbind.fill(data, C_info)
 
-setwd("...")
-
-write.xlsx(data, "./2_Data normaliztion/Blood/PMI_rat_blood_validation_stable_features_normalized_batchnorm_pos.xlsx")
+write_rds(data, "./2_Data normalization/Blood/PMI_rat_blood_validation_stable_features_normalized_batchnorm.rds")
 
 
 
 ```
-
-
 
 
 
