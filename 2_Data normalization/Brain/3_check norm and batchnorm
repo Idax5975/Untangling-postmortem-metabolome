@@ -1,0 +1,147 @@
+---
+title: "PMI rat brain - PCA of original + validation set - filtered, stable features, normalized"
+author: "IMML"
+date: " updated : `r Sys.time()`"
+output: 
+  html_document:
+    code_folding: hide
+    theme: cosmo
+    toc: yes
+editor_options: 
+  chunk_output_type: console
+---
+Data used in this script is sent through XCMS on the GenomeDK computer cluster together with the samples from the remaining three tissue types and the validation data WITHOUT any grouping .
+```{r, message=F, warning=F}
+
+# Initialization
+
+## Turning off warnings and messages in output
+
+knitr::opts_chunk$set(message=F)
+knitr::opts_chunk$set(warning=F)
+
+## Loading required packages
+library(tidyverse)
+library(cowplot)
+library(ggsci)
+library(Hmisc)
+library(dplyr)
+library(xlsx)
+library(ggfortify)
+
+## Configuration of output format etc.
+
+options(digits = 5)        # number of digits printed by R default (vectors, data.frames, lists)
+options(pillar.sigfig = 5) # number of digits printed by tibbles default.
+
+text_base_size   <- 8   # in pt
+fig.witdh        <- 200  # in mm
+fig.height       <- 150  # in mm
+
+# Set all text in plots to same size
+theme_set(theme_cowplot(font_size = text_base_size, rel_small = 1, rel_tiny = 1, rel_large = 1))
+
+# Setting output sizes for plots
+knitr::opts_chunk$set(fig.width = fig.witdh/25.4)
+knitr::opts_chunk$set(fig.height = fig.height/25.4)
+knitr::opts_chunk$set(dpi = 108) # You need to find your minotors dpi yourself.
+
+# Setting text size inside plots (geom_text, geom_label etc.)
+ggplot_text_size <- text_base_size / ggplot2::.pt
+# Now use: geom_text(..., size = ggplot_text_size)
+
+# For saving plots!
+# Use: ggsave(plot1, filename="myplot.png", width = fig.witdh, height=fig.height, units = "mm")
+# Use: ggsave(plot1, filename="myplot.pdf", width = fig.witdh, height=fig.height, units = "mm")
+
+# Changing default ggplot colours
+# see ?scale_fill_continuous
+options(ggplot2.continuous.fill  = scale_fill_viridis_c)    
+options(ggplot2.discrete.fill    = list(ggsci::pal_locuszoom()(7)) )
+options(ggplot2.continuous.colour = scale_colour_viridis_c)
+options(ggplot2.discrete.colour   = list(ggsci::pal_locuszoom()(7)))
+
+## Set locale if you want Danish/English month names etc.
+
+#x <- Sys.setlocale(locale = "Danish_Denmark")  # For Danish axes on plot
+x <- Sys.setlocale(locale = "English_Denmark")  # For English axes on plot
+rm(x)
+
+source("./pca_function.R")
+
+source("./PCA_replicate_function_PMI_IMML.R")
+
+source("./PCA_replicate_function_IMML.R")
+
+source("./\PCA_replicate_function_raw_PMI_IMML.R")
+
+```
+
+# Load Data  
+  
+```{r load data}
+#Remember to set working directory
+
+#Loading and formatting:
+Raw_data <- readRDS("./2_Data normalization/Brain/PMI_rat_brain_stable_features_normalized_batchnorm.rds")
+
+Val_data <- readRDS("./2_Data normalization/Brain/PMI_rat_brain_validation_stable_features_normalized_batchnorm.rds")
+
+
+
+#prepare dfs:
+Raw_data <- Raw_data[,-c(1, 2, 14, 15, 16)]%>%
+  as_tibble()
+
+CAMERA_info <- Raw_data[80:nrow(Raw_data),]
+
+Prep_data <- Raw_data[1:79,]
+
+
+
+#prepare validation data
+Val_data <- Val_data[,-c(1,2)]%>%
+  as_tibble()
+
+#prep_val_data <- Val_data[, which((names(Val_data) %in% compound_names)== TRUE)]
+CAMERA_info_val <- Val_data[15:nrow(Val_data),]
+
+prep_val_data <- Val_data[-c(15:nrow(Val_data)),]
+
+
+combined_data <- rbind(Prep_data, prep_val_data)
+
+
+
+#making a more useful dataframe
+ms <- list()
+
+ms$rowinfo <- combined_data%>%
+  select(Sample_ID, Unique_ID, Tissue_ID, Rat_ID, Batch, Type, PMI_group, Death_manner, Room_Temperature, Sampling_order, Time_since_death_h)%>%
+  rowid_to_column()
+
+ms$values <- combined_data %>%
+  select(-Sample_ID, -Unique_ID, -Tissue_ID, -Rat_ID, -Batch, -Type, -PMI_group, -Death_manner, -Room_Temperature, -Sampling_order, -Time_since_death_h)%>%
+  as.matrix()
+
+
+storage.mode(ms$values) <- "numeric"
+ms$values <- replace(ms$values, is.na(ms$values), 0)
+
+```
+
+
+
+
+
+# PCA of raw data
+```{r PCA plots raw}
+
+plot_pca(ms$values, ms$rowinfo, color_label = "PMI_group", panels = 1)
+
+plot_pca(ms$values, ms$rowinfo, color_label = "Batch", panels = 1)
+
+
+```
+
+
