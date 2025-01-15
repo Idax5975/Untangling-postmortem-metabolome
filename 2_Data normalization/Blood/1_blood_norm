@@ -1,6 +1,6 @@
 ---
 title: "PMI rat blood - Normalization and PCA based on 200 stable features"
-author: "IMML"
+author: "Ida Marie Marquart Løber"
 date: " updated : `r Sys.time()`"
 output: 
   html_document:
@@ -10,7 +10,7 @@ output:
 editor_options: 
   chunk_output_type: console
 ---
-Data used in this script is sent through XCMS on the cluster together with the samples from the remaining three tissue types WITHOUT any grouping .
+Data used in this script is sent through XCMS on the GenomeDK computer cluster together with the samples from the remaining three tissue types WITHOUT any grouping .
 ```{r, message=F, warning=F}
 
 # Initialization
@@ -67,13 +67,13 @@ options(ggplot2.discrete.colour   = list(ggsci::pal_locuszoom()(7)))
 x <- Sys.setlocale(locale = "English_Denmark")  # For English axes on plot
 rm(x)
 
-source("...\Functions_R\pca_function.R")
+source("./pca_function.R")
 
-source("...\Functions_R\\PCA_replicate_function_PMI_IMML.R")
+source("./PCA_replicate_function_PMI_IMML.R")
 
-source("...\Functions_R\\PCA_replicate_function_IMML.R")
+source("./PCA_replicate_function_IMML.R")
 
-source("...\Functions_R\\PCA_replicate_function_raw_PMI_IMML.R")
+source("./PCA_replicate_function_raw_PMI_IMML.R")
 
 ```
 
@@ -81,24 +81,27 @@ source("...\Functions_R\\PCA_replicate_function_raw_PMI_IMML.R")
   
 ```{r load data}
 
-setwd("...")
+#remember to set working directory!
 
 #Loading and formatting:
-Raw_data <- readxl::read_xlsx(path = ".../Blood/PMI_rat_blood_raw_winfo_filtered_blank_pos.xlsx")
+Raw_data <- readxl::read_xlsx(path = "./0_Data/Data/Blood/PMI_rat_blood_raw_winfo_filtered_blank.xlsx")
 
-Raw_data <- t(Raw_data)
+pd_long <- Raw_data%>%
+  pivot_longer(cols = -name, values_to = "values", names_repair = "unique")
 
-colnames(Raw_data) <- Raw_data[1,]
+pd <- pd_long%>%
+  pivot_wider(names_from = name...1, values_from = values)
 
-Raw_data <- Raw_data[-c(1, 56, 57, 58, 59),]%>%
-  as.data.frame()
+names(pd)[names(pd) == "name...2"] <- "Info"
+
+pd <- pd[-c(55, 56, 57, 58),]%>%
+  as_tibble()
 
 
-Raw_data <- tibble::rownames_to_column(Raw_data, "Info")
-CAMERA_info <- Raw_data[1:13,]
+CAMERA_info <- pd[1:13,]
 
 
-Prep_data <- Raw_data[14:nrow(Raw_data),]
+Prep_data <- pd[14:nrow(pd),]
 
 #making a more useful dataframe
 ms <- list()
@@ -116,6 +119,8 @@ storage.mode(ms$values) <- "numeric"
 ms$values <- replace(ms$values, is.na(ms$values), 0)
 
 ms$rowinfo$Time_since_death_h <- round(as.numeric(ms$rowinfo$Time_since_death_h), digits = 0)
+
+rm(pd_long)
 ```
 
 # PCA of raw data
@@ -124,14 +129,20 @@ ms$rowinfo$Time_since_death_h <- round(as.numeric(ms$rowinfo$Time_since_death_h)
 plot_pca(ms$values, ms$rowinfo, color_label = "Time_since_death_h", panels = 1)
 
 
-
-
-
-
 tmp1 <- ms$rowinfo %>% mutate(color_variable=Time_since_death_h)
 tmp2 <- ms$values
 
 plot_pmi_raw_pca_replicates(tmp1,tmp2, title = "All blood samples, all raw features", show_legend_title = "Time since death (h)")
+
+p_blood <- plot_pmi_raw_pca_replicates(tmp1,tmp2, title = "All blood samples, all raw features", show_legend_title = "Time since death (h)")
+
+
+
+tmp1 <- ms$rowinfo %>% mutate(color_variable=Death_manner)
+tmp2 <- ms$values
+
+m_blood <- plot_pmi_raw_pca_replicates(tmp1,tmp2, title = "All blood samples, all raw features", show_legend_title = "Manner of death")
+
 
 rm(tmp1, tmp2)
 ```
@@ -169,7 +180,7 @@ rm(tmp1, tmp2)
 
 ```
 
-```{r PCA of transformed data}
+```{r PCA of data}
 tmp1 <- ms$rowinfo0 %>% filter(Type2=="Replicate") %>% mutate(color_variable = Batch)
 tmp2 <- ms$values0_0[tmp1$i,]
 plot_pca_replicates(tmp1,tmp2, title = "Technical replicates only")
@@ -267,9 +278,9 @@ rm(result)
 
 
 
-## PCA of selected and transformed compounds
+## PCA of selected compounds
 
-```{r}
+```{r PCA of stable features}
 
 tmp1 <- ms$rowinfo0 %>% filter(Type2=="Replicate") %>% mutate(color_variable=PMI_group)
 tmp2 <- ms$good_single_compounds[tmp1$i,]
@@ -284,19 +295,25 @@ plot_pca_replicates(tmp1,tmp2, title = "All blood samples, stable features")
 #Special PCA:
 plot_pmi_pca_replicates(tmp1, tmp2, title = "All blood samples, stable features", show_legend_title = "Time since death (h)")
 
+t_blood <- plot_pmi_pca_replicates(tmp1, tmp2, title = "All blood samples, stable features", show_legend_title = "Time since death (h)")
 
-#Prepare for loadings plot
-r <- prcomp(x=ms$good_single_compounds)
+blood <- plot_grid(p_blood, t_blood, labels = c('B', ''), label_size = 7, rel_widths = c(1, 1.5))
 
-PCAloadings <- r$rotation
 
-plot(PCAloadings[,1:2], #x and y data
-     pch=21,            # point shape
-     bg="black",        # point color
-     cex=0.9,             # point size
-     main="Loadings  - PMI rat blood, Stable features, positive ionization")   # Title of plot
-text(PCAloadings[,1:2], # Set label position
-     labels=rownames(PCAloadings), cex = 0.7) #print labels
+write_rds(blood, "./2_Data normalization/Blood/pca_blood.rds")
+
+#PCA of manner of death
+tmp1 <- ms$rowinfo0 %>% mutate(color_variable=Death_manner, group_variable=group_id)
+tmp2 <- ms$good_single_compounds
+
+n_blood <- plot_pmi_pca_replicates(tmp1, tmp2, title = "All blood samples, stable features", show_legend_title = "Manner of death")
+
+blood_manner <- plot_grid(m_blood, n_blood, labels = c('B', ''), label_size = 7, rel_widths = c(1, 1.5))
+
+
+write_rds(blood_manner, "./2_Data normalization/Blood/pca_blood_death_manner.rds")
+
+
 
 
 rm(tmp1,tmp2)
@@ -347,38 +364,11 @@ for(i in 1:nrow(target_values3)) {
 ms$good_single_compounds <- target_values2
 
 
-#3. transform data:
-#histogram before transformation:
-#pd <- as.data.frame(ms$good_single_compounds) %>% 
-#  pivot_longer(cols = everything(), values_to = "raw") %>%
-#  mutate(log1p = log1p(raw)) %>%
-#  mutate(`4th root` = raw^(1/4)) %>%
-#  select(-name) %>%
-#  pivot_longer(cols = everything()) %>%
-#  mutate(name = fct_inorder(name))
-
-#ggplot(pd, aes(x=value, fill=name)) + 
-#  geom_histogram() +
-#  facet_wrap(~name, scales = "free", ncol=1) +
-#  ggtitle("Effect of transformation") +
-#  theme(legend.position = "none", axis.title = element_blank())
-
-
-#Transform values
-#ms$good_single_compounds <- log1p(ms$good_single_compounds)
-
-
-#cleaning
-#rm(pd, r, target_values, target_values2, target_values3, constant_columns, i, j, median_peak, mysum, x)
-
-
-
-#4. Batch normalization:
+#3. Batch normalization across the two batches to make it similar to validation data:
 #new feature value = (feature value - mean feature value in batch)/std. of feature in batch
 
 Batch1_features <- ms$rowinfo0%>%
-  cbind(ms$good_single_compounds)%>%
-  filter(Batch == "1" | Batch == "2")
+  cbind(ms$good_single_compounds)
 
 Batch1_metadata <- Batch1_features[,1:16]
 Batch1_features <- Batch1_features[,17:ncol(Batch1_features)]
@@ -406,16 +396,16 @@ rm(Batch1_features, Batch1_metadata, Batch1_norm_features, Batchnorm, col, row)
 
 
 #plot histogram
-pd <- as.data.frame(ms$good_single_compounds) %>% 
+df <- as.data.frame(ms$good_single_compounds) %>% 
   pivot_longer(cols = everything(), values_to = "norm, transform, batchnorm") %>%
   select(-name) %>%
   pivot_longer(cols = everything()) %>%
   mutate(name = fct_inorder(name))
 
-ggplot(pd, aes(x=value, fill=name)) + 
+ggplot(df, aes(x=value, fill=name)) + 
   geom_histogram() +
   facet_wrap(~name, scales = "free", ncol=1) +
-  ggtitle("Effect of transformation") +
+  ggtitle("Effect of Normalization and batch normalization") +
   theme(legend.position = "none", axis.title = element_blank())
 
 
@@ -451,14 +441,10 @@ C_info <- cbind(CAMERA_info[,1:12], C_info)
 
 data <- plyr::rbind.fill(data, C_info)
 
-setwd("...")
-write.xlsx(data, "./2_Data normalization/Blood/PMI_rat_blood_stable_features_normalized_batchnorm_pos.xlsx")
+
+write_rds(data, "./2_Data normalization/Blood/PMI_rat_blood_stable_features_normalized_batchnorm.rds")
 
 
 
 ```
-
-
-
-
 
