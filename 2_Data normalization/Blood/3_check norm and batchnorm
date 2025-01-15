@@ -1,6 +1,6 @@
 ---
 title: "PMI rat blood - PCA of original + validation set"
-author: "Ida Marie Marquart Løber"
+author: "IMML"
 date: " updated : `r Sys.time()`"
 output: 
   html_document:
