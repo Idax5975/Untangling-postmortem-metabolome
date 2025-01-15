@@ -1,1 +1,28 @@
-...
+Settings for XCMS:
+
+xcms_parameters:
+  alignment:
+    extraPeaks: 5
+    family: gaussian
+    minFraction: 0.9
+    smooth: loess
+    span: 0.6
+  centwave:
+    mzdiff: 0.01
+    peakwidth: c(4,15)
+    ppm: 12
+    prefilter: c(3,500)
+    snthresh: 6
+  peak_grouping1:
+    binSize: 0.01
+    bw: 2.5
+    maxFeatures: 50
+    minFraction: 0.3
+  peak_grouping2:
+    binSize: 0.01
+    bw: 2.5
+    maxFeatures: 50
+    minFraction: 0.6
+
+Full XCMS script and setup can be found at:
+https://github.com/JohanLassen/cXCMS 
