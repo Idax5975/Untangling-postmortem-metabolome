@@ -1,6 +1,6 @@
 ---
 title: "PMI rat blood validation- Normalization and PCA based on 200 stable features"
-author: "Ida Marie Marquart Løber"
+author: "IMML"
 date: " updated : `r Sys.time()`"
 output: 
   html_document:
