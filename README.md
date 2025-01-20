@@ -12,6 +12,4 @@ In the main folder "Functions_R" are the specific functions used for plotting th
 
 Packages used for machine learning:
 
-caret (version 7.0-1)
-glmnet (version 4.1-8)
-ranger (version 0.17.0)
+caret (version 7.0-1), glmnet (version 4.1-8), ranger (version 0.17.0)
