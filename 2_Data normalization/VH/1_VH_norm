@@ -1,6 +1,6 @@
 ---
 title: "PMI rat VH - Normalization and PCA"
-author: "IMML"
+author: "Ida Marie Marquart Løber"
 date: " updated : `r Sys.time()`"
 output: 
   html_document:
@@ -10,7 +10,7 @@ output:
 editor_options: 
   chunk_output_type: console
 ---
-Data used in this script is sent through XCMS on the cluster together with the samples from the remaining three tissue types WITHOUT any grouping .
+Data used in this script is sent through XCMS on the GenomeDK computer cluster together with the samples from the remaining three tissue types WITHOUT any grouping .
 ```{r, message=F, warning=F}
 
 # Initialization
@@ -67,38 +67,41 @@ options(ggplot2.discrete.colour   = list(ggsci::pal_locuszoom()(7)))
 x <- Sys.setlocale(locale = "English_Denmark")  # For English axes on plot
 rm(x)
 
-source("...\Functions_R\\pca_function.R")
+source("./pca_function.R")
 
-source("...\Functions_R\\PCA_replicate_function_PMI_IMML.R")
+source("./PCA_replicate_function_PMI_IMML.R")
 
-source("...\Functions_R\\PCA_replicate_function_IMML.R")
+source("./PCA_replicate_function_IMML.R")
 
-source("...\Functions_R\\PCA_replicate_function_raw_PMI_IMML.R")
+source("./PCA_replicate_function_raw_PMI_IMML.R")
 
 ```
 
 # Load Data  
   
 ```{r load data}
+#Remember to set working directory!
 
-setwd("...")
 
 #Loading and formatting:
-Raw_data <- readxl::read_xlsx(path = "./PMI_rat_VH_raw_winfo_filtered_blank_pos.xlsx")
+Raw_data <- readxl::read_xlsx(path = "./1_Data/Vitreous Humor/PMI_rat_VH_raw_winfo_filtered_blank_pos.xlsx")
 
-Raw_data <- t(Raw_data)
+pd_long <- Raw_data%>%
+  pivot_longer(cols = -name, values_to = "values", names_repair = "unique")
 
-colnames(Raw_data) <- Raw_data[1,]
+pd <- pd_long%>%
+  pivot_wider(names_from = name...1, values_from = values)
 
-Raw_data <- Raw_data[-c(1, 46, 47, 48),]%>%
-  as.data.frame()
+names(pd)[names(pd) == "name...2"] <- "Info"
+
+pd <- pd[-c(45:47),]%>%
+  as_tibble()
 
 
-Raw_data <- tibble::rownames_to_column(Raw_data, "Info")
-CAMERA_info <- Raw_data[1:13,]
+CAMERA_info <- pd[1:13,]
 
 
-Prep_data <- Raw_data[14:nrow(Raw_data),]
+Prep_data <- pd[14:nrow(pd),]
 
 #making a more useful dataframe
 ms <- list()
@@ -126,7 +129,7 @@ constant_columns <-
 
 #We will remove:
 constant_columns[constant_columns]
-# No constant columns
+# one constant columns
 
 ms$values <- ms$values[,!constant_columns]
 ```
@@ -138,27 +141,34 @@ tmp1 <- ms$rowinfo %>% mutate(color_variable= Time_since_death_h)
 tmp2 <- ms$values
 
 plot_pmi_pca_replicates(tmp1,tmp2, title = "All VH samples, all raw features", show_legend_title = "Time since death (h)")
-```
 
-```{r histogram}
 
-#plot histogram
-pd <- as.data.frame(ms$values) %>% 
-  pivot_longer(cols = everything(), values_to = "raw") %>%
-  select(-name) %>%
-  pivot_longer(cols = everything()) %>%
-  mutate(name = fct_inorder(name))
+p_VH <- plot_pmi_pca_replicates(tmp1,tmp2, title = "All VH samples, all raw features", show_legend_title = "Time since death (h)")
 
-ggplot(pd, aes(x=value, fill=name)) + 
-  geom_histogram() +
-  facet_wrap(~name, scales = "free", ncol=1) +
-  ggtitle("Distrubution of raw data") +
-  theme(legend.position = "none", axis.title = element_blank())
+VH <- plot_grid(p_VH, NULL, labels = c('D', ''), label_size = 7, rel_widths = c(1.5, 1))
+
+
+write_rds(VH, "./2_Data normalization/VH/pca_vh.rds")
+
+
+
+#color manner of death
+tmp1 <- ms$rowinfo %>% mutate(color_variable= Death_manner)
+tmp2 <- ms$values
+
+m_VH <- plot_pmi_pca_replicates(tmp1,tmp2, title = "All VH samples, all raw features", show_legend_title = "Manner of death")
+
+VH_manner <- plot_grid(m_VH, NULL, labels = c('D', ''), label_size = 7, rel_widths = c(1.5, 1))
+
+
+write_rds(VH_manner, "./2_Data normalization/VH/pca_vh_death_manner.rds")
 
 ```
 
 
 # Normalization
+
+
 ```{r Normalization}
 
 #Normalization:
@@ -187,38 +197,11 @@ for(i in 1:nrow(target_values3)) {
 ms$values <- target_values2
 
 
-#3. transform data:
-#histogram before transformation:
-#pd <- as.data.frame(ms$good_single_compounds) %>% 
-#  pivot_longer(cols = everything(), values_to = "raw") %>%
-#  mutate(log1p = log1p(raw)) %>%
-#  mutate(`4th root` = raw^(1/4)) %>%
-#  select(-name) %>%
-#  pivot_longer(cols = everything()) %>%
-#  mutate(name = fct_inorder(name))
-
-#ggplot(pd, aes(x=value, fill=name)) + 
-#  geom_histogram() +
-#  facet_wrap(~name, scales = "free", ncol=1) +
-#  ggtitle("Effect of transformation") +
-#  theme(legend.position = "none", axis.title = element_blank())
-
-
-#Transform values
-#ms$good_single_compounds <- log1p(ms$good_single_compounds)
-
-
-#cleaning
-#rm(pd, r, target_values, target_values2, target_values3, constant_columns, i, j, median_peak, mysum, x)
-
-
-
-#4. Batch normalization:
+#3. Batch normalization:
 #new feature value = (feature value - mean feature value in batch)/std. of feature in batch
 
 Batch1_features <- ms$rowinfo%>%
-  cbind(ms$values)%>%
-  filter(Batch == "1")
+  cbind(ms$values)
 
 Batch1_metadata <- Batch1_features[,1:13]
 Batch1_features <- Batch1_features[,14:ncol(Batch1_features)]
@@ -246,13 +229,13 @@ rm(Batch1_features, Batch1_metadata, Batch1_norm_features, Batchnorm, col, row)
 
 
 #plot histogram
-pd <- as.data.frame(ms$values) %>% 
+df <- as.data.frame(ms$values) %>% 
   pivot_longer(cols = everything(), values_to = "norm, batchnorm") %>%
   select(-name) %>%
   pivot_longer(cols = everything()) %>%
   mutate(name = fct_inorder(name))
 
-ggplot(pd, aes(x=value, fill=name)) + 
+ggplot(df, aes(x=value, fill=name)) + 
   geom_histogram() +
   facet_wrap(~name, scales = "free", ncol=1) +
   ggtitle("Effect of normalization") +
@@ -287,13 +270,12 @@ C_info <- cbind(CAMERA_info[,1:12], C_info)
 
 data <- plyr::rbind.fill(data, C_info)
 
-setwd("...")
-write.xlsx(data, "./2_Data normalization/VH/PMI_rat_VH_stable_features_normalized_batchnorm_pos.xlsx")
+
+write_rds(data, "./2_Data normalization/VH/PMI_rat_VH_stable_features_normalized_batchnorm.rds")
 
 
 
 ```
-
 
 
 
