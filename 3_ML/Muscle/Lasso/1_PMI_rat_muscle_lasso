@@ -1,0 +1,233 @@
+---
+title: "ML - PMI rat muscle - annotated stable features - bootstrapping - pos"
+author: "IMML"
+date: " updated : `r Sys.time()`"
+output: 
+  html_document:
+    code_folding: hide
+    theme: cosmo
+    toc: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+# Init
+
+```{r, message=F, warning=F}
+
+library(tidyverse)
+library(cowplot)
+library(ggsci)
+library(lightgbm)
+library(xlsx)
+
+knitr::opts_chunk$set(message=F)
+knitr::opts_chunk$set(warning=F)
+
+options(digits = 5)
+options(pillar.sigfig = 5)
+
+text_base_size   <- 12
+fig.witdh        <- 180
+fig.height       <- 120
+
+theme_set(theme_cowplot(font_size = text_base_size, rel_small = 1, rel_tiny = 1, rel_large = 1))
+
+knitr::opts_chunk$set(fig.width = fig.witdh/25.4)
+knitr::opts_chunk$set(fig.height = fig.height/25.4)
+knitr::opts_chunk$set(dpi = 108) # You need to find your minotors dpi yourself.
+
+ggplot_text_size <- text_base_size / ggplot2::.pt
+
+options(ggplot2.continuous.fill  = scale_fill_viridis_c)    
+options(ggplot2.discrete.fill    = list(ggsci::pal_locuszoom()(7)) )
+options(ggplot2.continuous.colour = scale_colour_viridis_c)
+options(ggplot2.discrete.colour   = list(ggsci::pal_locuszoom()(7)))
+
+x <- Sys.setlocale(locale = "English_Denmark")  # For English axes on plot
+rm(x)
+
+```
+
+# Ensure same results every single time
+
+
+```{r}
+
+set.seed(0)
+
+```
+
+# Reading data
+
+```{r load data}
+
+raw_data <- readRDS("./2_Data normalization/Muscle/PMI_rat_muscle_stable_features_normalized_batchnorm.rds")
+
+raw_data <- raw_data[,-1]
+
+CAMERA_info <- raw_data[82:94,]
+
+raw_data <- raw_data[-c(82:94),]
+
+raw_data <- raw_data %>% 
+  mutate(pmi = Time_since_death_h %>% as.numeric()) %>%
+  select(pmi, everything()) %>%
+  drop_na(pmi) %>% # Removes QC samples
+  sample_frac(size = 1) %>%
+  {.}
+
+
+df <- raw_data%>%
+  select(-Info, -Time_since_death_h, - Unique_ID, -Tissue_ID, -Rat_ID, -Batch, -Type, -PMI_group, - Death_manner, -Room_Temperature, -Sampling_order, - Type2, -group_id, -i)%>%
+  select(Sample_ID, everything())
+
+for (i in 2:ncol(df)) {
+  df[[i]] <- as.numeric(df[[i]])
+}
+
+
+```
+
+# Filter df to contain annotated metabolites only
+```{r}
+annotated <- read.xlsx("./3_ML/Muscle/Annotations_muscle_200sf.xlsx", 1)
+
+feature_names <- annotated %>% select(starts_with("M")) %>% names()
+
+df2 <- df%>%
+  select(all_of(feature_names))
+
+df2 <- cbind(df[,1:2], df2)
+
+
+
+
+```
+
+# Nested leave one rat out
+
+```{r}
+
+r <- list()
+
+lambda.grid <- expand.grid(alpha=1, lambda=10^seq(-5,0, length=50))
+
+rats <- unique(df2$Sample_ID)
+
+i = 1
+
+for (i in 1:length(rats)) {
+  rat1_id <- rats[i]
+  inner_data <- df2 %>% filter(Sample_ID != rat1_id)
+  cat(date(), " Leaving rat ", i, "/", length(rats), " (",rat1_id,") out\n", sep="",
+      file = "log_muscle_lasso.txt", append = T)
+  for (rat2_id in unique(inner_data$Sample_ID)) {
+    # Training data
+    x <- inner_data %>% filter(Sample_ID != rat2_id) 
+    x_train <- x %>% select(all_of(feature_names)) %>% as.matrix()
+    y_train <- x %>% pull(pmi)
+    folds <- caret::groupKFold(x$Sample_ID, k = length(unique(x$Sample_ID)))
+    train_control <- caret::trainControl(method="cv", index=folds, verboseIter = F)
+    #
+    # Select important features using everything except 2 rats
+    #
+    
+    lasso.model.full <- caret::train(x = x_train, y = y_train, 
+                         method = "glmnet",
+                         tuneGrid = lambda.grid, 
+                         trControl = train_control)
+    #
+    # select top 15 features from CV model
+    #
+    muscle_important_features <- varImp(lasso.model.full)$importance %>% 
+      tibble::rownames_to_column() %>%
+      filter(Overall > 0) %>%
+      slice_max(Overall, n=15) %>%
+      pull(rowname)
+    
+    #
+    # Limit training data to selected features
+    #
+    x <- inner_data %>% filter(Sample_ID != rat2_id) 
+    x_train <- x %>% select(all_of(muscle_important_features)) %>% as.matrix()
+    y_train <- x %>% pull(pmi)
+    folds <- caret::groupKFold(x$Sample_ID, k = length(unique(x$Sample_ID)))
+    train_control <- caret::trainControl(method="cv", index=folds, verboseIter = F)
+    # Test data
+    x <- df2 %>% filter(Sample_ID == rat2_id)
+    x_test <- x %>% select(all_of(muscle_important_features)) 
+    y_test <- x %>% select(!all_of(feature_names))
+    #
+    # Lasso training of everything except the two rats
+    #
+    print(paste(Sys.time(), "Fitting lasso"))
+    model <- caret::train(x = x_train, y = y_train, 
+                          method = "glmnet", 
+                          tuneGrid = lambda.grid,
+                          trControl = caret::trainControl(method = "boot"))
+
+    r[[length(r)+1]] <- y_test %>% 
+      mutate(predicted = predict(model, newdata = x_test %>% as.matrix()),
+             rat1 = rat1_id, rat2=rat2_id, 
+             method="Lasso")
+    
+    
+  }
+}
+
+
+pd <- bind_rows(r)
+write_tsv(pd, file="./3_ML/Muscle/Lasso/results_lasso_muscle_nested_leave_rat_out.tsv")
+
+
+
+```
+
+
+## Fit model to full dataset and extract 
+
+```{r}
+
+data_train <- df2
+x_train <- data_train %>% select(all_of(feature_names))
+y_train <- data_train %>% pull(pmi)
+
+folds <- caret::groupKFold(data_train$Sample_ID, k = length(unique(data_train$Sample_ID)))
+train_control <- caret::trainControl(method="cv", index=folds, verboseIter = F)
+
+lasso.model.full <- caret::train(x = as.matrix(x_train), y = y_train, 
+                         method = "glmnet",
+                         tuneGrid = lambda.grid, 
+                         trControl = train_control)
+
+#
+# select top 15 features from CV model
+#
+muscle_important_features <- varImp(lasso.model.full)$importance %>% 
+  tibble::rownames_to_column() %>%
+  as_tibble() %>%
+  filter(Overall > 0) %>%
+  arrange(desc(Overall)) %>%  
+  slice_max(Overall, n=15)
+
+write_rds(lasso.model.full, "./3_ML/Muscle/Lasso/pmi_muscle_lasso_model.rds")
+
+```
+
+
+## Saving
+
+```{r}
+
+t <- cbind(CAMERA_info[,1], CAMERA_info[, muscle_important_features$rowname])%>%
+  as_tibble()
+
+names(t)[1] <- "Info"
+
+t <- t %>% pivot_longer(starts_with("M")) %>% pivot_wider(names_from = Info, values_from = value)
+knitr::kable(t)
+
+write_tsv(t, file="./3_ML/Muscle/Lasso/results_muscle_full.tsv")
+
+```
