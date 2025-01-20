@@ -1,6 +1,5 @@
 
 
-
 plot_pmi_pca_replicates <- function(tmp1,tmp2, title="", show_legend=T, ranks=8, return_plot=F, show_legend_title="", group_variable=NA) {
   require(ggplot2)
   # Requires a color_variable and a group variable
@@ -73,4 +72,3 @@ plot_pmi_pca_replicates <- function(tmp1,tmp2, title="", show_legend=T, ranks=8,
   plot(final)
   #knitr::asis_output(x = '\n<p>[Go to Top](#)\n')
 }
-
