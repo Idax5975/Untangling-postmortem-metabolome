@@ -67,7 +67,7 @@ options(ggplot2.discrete.colour   = list(ggsci::pal_locuszoom()(7)))
 x <- Sys.setlocale(locale = "English_Denmark")  # For English axes on plot
 rm(x)
 
-source("./Functions_R\\pca_function.R")
+source("./pca_function.R")
 
 source("./PCA_replicate_function_PMI_IMML.R")
 
@@ -83,7 +83,7 @@ source("./PCA_replicate_function_raw_PMI_IMML.R")
 #remember to set working directory!
 
 #Loading and formatting:
-Raw_data <- readxl::read_xlsx(path = "./0_Data/Data/Blood/PMI_rat_blood_raw_validation_winfo_filtered_blank.xlsx")
+Raw_data <- readxl::read_xlsx(path = "./1_Data/Blood/PMI_rat_blood_raw_validation_winfo_filtered_blank.xlsx")
 
 
 pd_long <- Raw_data%>%
