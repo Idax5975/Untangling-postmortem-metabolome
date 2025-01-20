@@ -83,7 +83,7 @@ source("./PCA_replicate_function_raw_PMI_IMML.R")
 #Remember to set working directory
 
 #Loading and formatting:
-Raw_data <- readxl::read_xlsx(path = "./0_Data/Data/Brain/PMI_rat_brain_raw_validation_winfo_filtered_blank.xlsx")
+Raw_data <- readxl::read_xlsx(path = "./1_Data/Brain/PMI_rat_brain_raw_validation_winfo_filtered_blank.xlsx")
 
 pd_long <- Raw_data%>%
   pivot_longer(cols = -name, values_to = "values", names_repair = "unique")
