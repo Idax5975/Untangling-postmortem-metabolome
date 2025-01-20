@@ -8,3 +8,10 @@ To briefly explain the initial preprocessing, features were removed if detected 
 Next, data was imported to R, continuing the preprocessing, data analysis (folder named "2_Data normalization", and modelling (folder named "3_ML").
 
 In the main folder "Functions_R" are the specific functions used for plotting the data.
+
+
+Packages used for machine learning:
+
+caret (version 7.0-1)
+glmnet (version 4.1-8)
+ranger (version 0.17.0)
